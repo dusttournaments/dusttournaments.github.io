@@ -47,7 +47,9 @@ def api_get(path, params=None):
 
 def fetch_for_user(username):
     try:
-        data = api_get("/tournaments", {"subdomain": username})
+        # No subdomain param: returns tournaments owned by the
+        # account that the API key belongs to.
+        data = api_get("/tournaments")
     except Exception as e:
         print(f"Warning: could not fetch tournaments for '{username}': {e}", file=sys.stderr)
         return []

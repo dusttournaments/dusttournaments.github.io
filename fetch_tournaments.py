@@ -2,138 +2,104 @@
 """
 fetch_tournaments.py
 
-Scrapes the Challonge community page for "DUST: Virtual Combat"
-(https://challonge.com/communities/dustvirtualcombat/tournaments)
-and writes the resulting tournament list to tournaments.json for use
-by index.html.
-
-The community page is a JavaScript-rendered single-page app, so this
-script uses Playwright (a headless browser) to load the page, wait for
-the tournament list to render, and then extract the data from the DOM.
+Fetches specific tournaments from the Challonge v1 API and writes them
+to tournaments.json for use by index.html.
 
 Usage:
-    python fetch_tournaments.py
+    CHALLONGE_API_KEY=your_key_here python fetch_tournaments.py
 
-Setup (first time):
-    pip install playwright
-    python -m playwright install chromium
+Get an API key from: https://challonge.com/settings/developer
 
-Run this on a schedule (e.g. via GitHub Actions) to keep
-tournaments.json up to date.
+How it works:
+- List the Challonge tournament URLs (the part after challonge.com/)
+  for "DUST: Virtual Combat" tournaments in TOURNAMENT_URLS below.
+- The script fetches each one via the v1 API and writes the combined
+  result to tournaments.json.
+
+You can find a tournament's URL slug from its Challonge page address,
+e.g. for https://challonge.com/ProtocolDust8 the slug is "ProtocolDust8".
+
+If a tournament is hosted under an organization subdomain
+(<subdomain>.challonge.com/<url>), list it as "subdomain-url".
 """
 
+import os
 import json
-import re
 import sys
+import urllib.request
+import urllib.parse
 from datetime import datetime
 
-from playwright.sync_api import sync_playwright
-
-COMMUNITY_URL = "https://challonge.com/communities/dustvirtualcombat/tournaments"
+API_BASE = "https://api.challonge.com/v1"
 GAME_NAME = "DUST: Virtual Combat"
 
+# Add the Challonge tournament URL slugs (the part after challonge.com/)
+# for each "DUST: Virtual Combat" tournament you want listed.
+# Example slugs: "ProtocolDust8", "ProtocolDust7", "myorg-Season1"
+TOURNAMENT_URLS = [
+    "ProtocolDust8",
+]
 
-def scrape():
-    results = []
 
-    with sync_playwright() as p:
-        browser = p.chromium.launch()
-        page = browser.new_page()
+def api_get(path, params=None):
+    api_key = os.environ.get("CHALLONGE_API_KEY")
+    if not api_key:
+        sys.exit("Error: CHALLONGE_API_KEY environment variable not set.")
 
-        try:
-            page.goto(COMMUNITY_URL, wait_until="domcontentloaded", timeout=60000)
-        except Exception as e:
-            print(f"Warning: page.goto issue: {e}", file=sys.stderr)
+    params = params or {}
+    params["api_key"] = api_key
+    query = urllib.parse.urlencode(params)
+    url = f"{API_BASE}{path}.json?{query}"
 
-        # Give the SPA time to render its content
-        page.wait_for_timeout(8000)
+    req = urllib.request.Request(url, headers={"User-Agent": "dust-vc-tournament-site"})
+    with urllib.request.urlopen(req) as resp:
+        return json.loads(resp.read().decode())
 
-        # Wait for tournament cards/links to appear. Challonge tournament
-        # links point at <subdomain>.challonge.com/<url> or challonge.com/<url>.
-        try:
-            page.wait_for_selector("a[href*='challonge.com']", timeout=30000)
-        except Exception:
-            print("Warning: no tournament links appeared within timeout.", file=sys.stderr)
 
-        # Grab every tournament card. Challonge renders each tournament as a
-        # link wrapping (or near) a title, status badge, date, and
-        # participant count. We collect anchors and pull nearby text.
-        cards = page.eval_on_selector_all(
-            "a[href*='challonge.com']",
-            """
-            (els) => els.map(el => {
-                const container = el.closest('[class*="card"], [class*="Card"], li, div') || el;
-                return {
-                    href: el.href,
-                    text: container.innerText || ''
-                };
-            })
-            """
-        )
+def fetch_tournament(url_slug):
+    try:
+        data = api_get(f"/tournaments/{url_slug}")
+        return data["tournament"]
+    except Exception as e:
+        print(f"Warning: could not fetch tournament '{url_slug}': {e}", file=sys.stderr)
+        return None
 
-        browser.close()
 
-    seen_urls = set()
-    for card in cards:
-        href = card["href"]
-        text = card["text"].strip()
+def to_record(t):
+    subdomain = t.get("subdomain")
+    url_part = t.get("url")
+    if subdomain:
+        full_url = f"https://{subdomain}.challonge.com/{url_part}"
+    else:
+        full_url = f"https://challonge.com/{url_part}"
 
-        # Skip non-tournament links (nav, footer, etc.)
-        if "/communities/" in href or "challonge.com" == href.rstrip("/").split("//")[-1]:
-            continue
-        if href in seen_urls:
-            continue
-        if not text:
-            continue
-
-        seen_urls.add(href)
-
-        lines = [l.strip() for l in text.split("\n") if l.strip()]
-        name = lines[0] if lines else href
-
-        state = "unknown"
-        lower_text = text.lower()
-        if "complete" in lower_text or "finished" in lower_text:
-            state = "complete"
-        elif "underway" in lower_text or "in progress" in lower_text or "live" in lower_text:
-            state = "underway"
-        elif "pending" in lower_text or "upcoming" in lower_text or "registration" in lower_text:
-            state = "pending"
-
-        participants_match = re.search(r"(\d+)\s*(participants?|players?|entrants?)", lower_text)
-        participants_count = int(participants_match.group(1)) if participants_match else None
-
-        # Try to find a date-like string
-        start_at = None
-        date_match = re.search(
-            r"\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?\s+\d{1,2}(,?\s+\d{4})?\b",
-            text
-        )
-        if date_match:
-            start_at = date_match.group(0)
-
-        results.append({
-            "name": name,
-            "state": state,
-            "participants_count": participants_count,
-            "start_at": start_at,
-            "url": href.split("/")[-1],
-            "full_challonge_url": href,
-            "game_name": GAME_NAME,
-        })
-
-    return results
+    return {
+        "name": t.get("name"),
+        "state": t.get("state"),
+        "participants_count": t.get("participants_count"),
+        "start_at": t.get("start_at"),
+        "url": url_part,
+        "full_challonge_url": full_url,
+        "game_name": t.get("game_name") or GAME_NAME,
+    }
 
 
 def main():
-    results = scrape()
+    results = []
+    seen_ids = set()
 
-    state_order = {"underway": 0, "pending": 1, "complete": 2, "unknown": 3}
-    results.sort(key=lambda r: state_order.get(r["state"], 3))
+    for slug in TOURNAMENT_URLS:
+        t = fetch_tournament(slug)
+        if t and t["id"] not in seen_ids:
+            results.append(to_record(t))
+            seen_ids.add(t["id"])
+
+    # Sort: in-progress first, then upcoming, then completed
+    state_order = {"underway": 0, "pending": 1, "complete": 2}
+    results.sort(key=lambda r: (state_order.get(r["state"], 3), r["start_at"] or ""))
 
     output = {
         "game": GAME_NAME,
-        "source": COMMUNITY_URL,
         "last_updated": datetime.utcnow().isoformat() + "Z",
         "tournaments": results,
     }

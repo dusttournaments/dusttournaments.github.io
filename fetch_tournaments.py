@@ -39,7 +39,14 @@ def scrape():
     with sync_playwright() as p:
         browser = p.chromium.launch()
         page = browser.new_page()
-        page.goto(COMMUNITY_URL, wait_until="networkidle", timeout=60000)
+
+        try:
+            page.goto(COMMUNITY_URL, wait_until="domcontentloaded", timeout=60000)
+        except Exception as e:
+            print(f"Warning: page.goto issue: {e}", file=sys.stderr)
+
+        # Give the SPA time to render its content
+        page.wait_for_timeout(8000)
 
         # Wait for tournament cards/links to appear. Challonge tournament
         # links point at <subdomain>.challonge.com/<url> or challonge.com/<url>.

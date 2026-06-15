@@ -20,12 +20,9 @@ jobs:
         with:
           python-version: '3.x'
 
-      - name: Install dependencies
-        run: |
-          pip install playwright
-          python -m playwright install --with-deps chromium
-
-      - name: Fetch tournaments from Challonge community page
+      - name: Fetch tournaments from Challonge
+        env:
+          CHALLONGE_API_KEY: ${{ secrets.CHALLONGE_API_KEY }}
         run: python fetch_tournaments.py
 
       - name: Commit updated tournaments.json

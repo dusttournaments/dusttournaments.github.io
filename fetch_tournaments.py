@@ -23,8 +23,11 @@ from datetime import datetime
 API_BASE = "https://api.challonge.com/v1"
 GAME_NAME = "DUST: Virtual Combat"
 
-# The Challonge username/subdomain whose tournaments we scan.
-CHALLONGE_USERNAME = "Cubeking"
+# Challonge usernames/subdomains whose tournaments we scan.
+CHALLONGE_USERNAMES = [
+    "Cubeking",
+    # "anotherusername",
+]
 
 
 def api_get(path, params=None):
@@ -79,26 +82,28 @@ def main():
     results = []
     seen_ids = set()
 
-    for t in fetch_for_user(CHALLONGE_USERNAME):
-        if matches_game(t) and t["id"] not in seen_ids:
-            results.append(to_record(t))
-            seen_ids.add(t["id"])
-
-    if not results:
-        # Fallback: if no tournaments matched game_name exactly (e.g. it
-        # wasn't set on some tournaments), include all tournaments from
-        # this account so nothing gets silently dropped.
-        for t in fetch_for_user(CHALLONGE_USERNAME):
-            if t["id"] not in seen_ids:
+    for username in CHALLONGE_USERNAMES:
+        for t in fetch_for_user(username):
+            if matches_game(t) and t["id"] not in seen_ids:
                 results.append(to_record(t))
                 seen_ids.add(t["id"])
+
+    if not results:
+        # Fallback: if nothing matched game_name exactly (e.g. it wasn't
+        # set on some tournaments), include all tournaments from these
+        # accounts so nothing gets silently dropped.
+        for username in CHALLONGE_USERNAMES:
+            for t in fetch_for_user(username):
+                if t["id"] not in seen_ids:
+                    results.append(to_record(t))
+                    seen_ids.add(t["id"])
 
     state_order = {"underway": 0, "pending": 1, "complete": 2}
     results.sort(key=lambda r: (state_order.get(r["state"], 3), r["start_at"] or ""))
 
     output = {
         "game": GAME_NAME,
-        "source_account": CHALLONGE_USERNAME,
+        "source_accounts": CHALLONGE_USERNAMES,
         "last_updated": datetime.utcnow().isoformat() + "Z",
         "tournaments": results,
     }

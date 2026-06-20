@@ -3,7 +3,7 @@
   "source_accounts": [
     "Cubeking"
   ],
-  "last_updated": "2026-06-19T04:48:12.155209Z",
+  "last_updated": "2026-06-20T04:03:13.445735Z",
   "tournaments": [
     {
       "name": "Protocol: DUST 2v2s #2",
@@ -63,7 +63,7 @@
       "name": "Protocol: DUST #6",
       "state": "complete",
       "participants_count": 6,
-      "start_at": "2025-11-14T19:00:00.000-06:00",
+      "start_at": "2025-11-14T20:00:00.000-05:00",
       "url": "dust6",
       "full_challonge_url": "https://challonge.com/dust6",
       "game_name": "DUST: Virtual Combat"
@@ -72,7 +72,7 @@
       "name": "Protocol: DUST #7",
       "state": "complete",
       "participants_count": 5,
-      "start_at": "2025-12-30T19:00:00.000-06:00",
+      "start_at": "2025-12-30T20:00:00.000-05:00",
       "url": "dust7",
       "full_challonge_url": "https://challonge.com/dust7",
       "game_name": "DUST: Virtual Combat"
